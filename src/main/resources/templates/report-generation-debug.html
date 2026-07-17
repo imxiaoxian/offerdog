@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <title>面试报告生成 & WebSocket 测试页</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        :root {
+            color-scheme: light dark;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: "SF Pro Display", "PingFang SC", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #f4f6fb;
+            color: #111827;
+            line-height: 1.5;
+        }
+
+        .wrapper {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 32px 18px 64px;
+        }
+
+        h1 {
+            margin-bottom: 0.5rem;
+            font-size: 28px;
+        }
+
+        p {
+            margin-top: 0;
+            color: #4b5563;
+        }
+
+        section {
+            background: #fff;
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 15px 60px rgba(15, 23, 42, 0.08);
+            border: 1px solid #e5e7eb;
+        }
+
+        section h2 {
+            margin-top: 0;
+            font-size: 20px;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 16px;
+        }
+
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 6px;
+            color: #111827;
+        }
+
+        input, select {
+            width: 100%;
+            padding: 10px 12px;
+            border-radius: 10px;
+            border: 1px solid #d1d5db;
+            font-size: 15px;
+            transition: border .2s, box-shadow .2s;
+        }
+
+        input:focus, select:focus {
+            outline: none;
+            border-color: #2563eb;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25);
+        }
+
+        button {
+            border: none;
+            border-radius: 999px;
+            padding: 10px 18px;
+            cursor: pointer;
+            font-size: 15px;
+            transition: transform .1s, box-shadow .1s;
+        }
+
+        button.primary {
+            background: #2563eb;
+            color: #fff;
+        }
+
+        button.secondary {
+            background: #f3f4f6;
+            color: #1f2937;
+        }
+
+        button.danger {
+            background: #dc2626;
+            color: #fff;
+        }
+
+        button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 12px 22px rgba(37, 99, 235, 0.25);
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+
+        .actions {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .status-chip {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: #dbeafe;
+            color: #1e40af;
+            font-size: 13px;
+            margin-left: 8px;
+        }
+
+        .log-panel {
+            background: #0f172a;
+            color: #d1d5db;
+            border-radius: 14px;
+            padding: 18px;
+            min-height: 220px;
+            max-height: 420px;
+            overflow-y: auto;
+            font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono";
+            font-size: 13px;
+            line-height: 1.6;
+        }
+
+        .log-entry {
+            margin-bottom: 10px;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+            padding-bottom: 8px;
+        }
+
+        .log-entry:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+        }
+
+        .log-entry strong {
+            color: #93c5fd;
+        }
+
+        .small-note {
+            font-size: 13px;
+            color: #6b7280;
+            margin-top: 6px;
+        }
+    </style>
+</head>
+<body>
+<div class="wrapper">
+    <h1>面试报告异步生成测试台</h1>
+    <p>用于验证 <code>/interview/sessions/{sessionId}/report/generate</code> 接口触发的后台任务以及 WebSocket 推送效果。</p>
+
+    <section>
+        <h2>连接信息
+            <span class="status-chip" id="ws-status">未连接</span>
+        </h2>
+        <div class="form-grid">
+            <div>
+                <label for="session-id">面试 SessionId</label>
+                <input id="session-id" placeholder="示例：a0fb4a5c-7c54-4d78-90de-2a0e3b3c2f5b">
+            </div>
+            <div>
+                <label for="http-base">HTTP 基础路径</label>
+                <input id="http-base" value="" placeholder="默认为当前站点">
+                <p class="small-note">如果后端在同域，可留空；否则如 <code>http://localhost:8080</code></p>
+            </div>
+            <div>
+                <label for="ws-url">WebSocket Endpoint</label>
+                <input id="ws-url" value="/ws" placeholder="默认 /ws">
+            </div>
+        </div>
+        <div class="actions" style="margin-top: 18px;">
+            <button class="primary" id="connect-btn">连接 WebSocket</button>
+            <button class="secondary" id="disconnect-btn" disabled>断开连接</button>
+            <button class="primary" id="trigger-btn" disabled>触发报告生成</button>
+            <button class="danger" id="clear-log-btn">清空日志</button>
+        </div>
+    </section>
+
+    <section>
+        <h2>推送日志</h2>
+        <div class="log-panel" id="log-panel"></div>
+    </section>
+</div>
+
+<script>
+    class SimpleStompClient {
+        constructor(options) {
+            this.url = options.url;
+            this.onConnect = options.onConnect;
+            this.onError = options.onError;
+            this.onClose = options.onClose;
+            this.debug = options.debug;
+            this.ws = null;
+            this.connected = false;
+            this.subscriptions = new Map();
+            this.subscriptionSeq = 0;
+        }
+
+        activate() {
+            if (this.ws) {
+                return;
+            }
+            const ws = new WebSocket(this.url);
+            this.ws = ws;
+            ws.onopen = () => {
+                this._debug('socket-open');
+                this._sendFrame('CONNECT', {
+                    'accept-version': '1.2,1.1,1.0',
+                    'heart-beat': '10000,10000'
+                });
+            };
+            ws.onmessage = event => this._handleChunk(event.data);
+            ws.onerror = event => {
+                this._debug('socket-error', {type: event?.type || 'error'});
+                this.onError && this.onError({message: 'WebSocket error', type: event?.type || 'error'});
+            };
+            ws.onclose = event => {
+                this._debug('socket-close', {code: event?.code, reason: event?.reason});
+                this.connected = false;
+                this.ws = null;
+                this.subscriptions.clear();
+                this.onClose && this.onClose(event);
+            };
+        }
+
+        deactivate() {
+            if (!this.ws) {
+                return;
+            }
+            try {
+                if (this.connected) {
+                    this._sendFrame('DISCONNECT', {});
+                }
+            } catch (err) {
+                this._debug('disconnect-error', {message: err?.message || String(err)});
+            }
+            this.ws.close();
+            this.ws = null;
+            this.connected = false;
+            this.subscriptions.clear();
+        }
+
+        subscribe(destination, callback, headers = {}) {
+            if (!this.connected || !this.ws) {
+                throw new Error('STOMP 未连接');
+            }
+            const id = headers.id || `sub-${++this.subscriptionSeq}`;
+            this.subscriptions.set(id, callback);
+            this._sendFrame('SUBSCRIBE', Object.assign({
+                id,
+                destination,
+                ack: 'auto'
+            }, headers));
+            return {
+                id,
+                unsubscribe: () => this.unsubscribe(id)
+            };
+        }
+
+        unsubscribe(id) {
+            if (this.subscriptions.has(id)) {
+                if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    this._sendFrame('UNSUBSCRIBE', {id});
+                }
+                this.subscriptions.delete(id);
+            }
+        }
+
+        _sendFrame(command, headers = {}, body = '') {
+            if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+                return;
+            }
+            const headerLines = Object.entries(headers).map(([key, value]) => `${key}:${value}`);
+            const headSection = headerLines.length ? `${headerLines.join('\n')}\n` : '';
+            const frame = `${command}\n${headSection}\n${body ?? ''}\0`;
+            this.ws.send(frame);
+        }
+
+        _handleChunk(chunk) {
+            if (chunk instanceof Blob) {
+                chunk.text().then(text => this._handleChunk(text));
+                return;
+            }
+            if (typeof chunk !== 'string') {
+                chunk = String(chunk);
+            }
+            const parts = chunk.split('\0');
+            for (const raw of parts) {
+                if (!raw || !raw.trim()) {
+                    continue;
+                }
+                const frame = this._parseFrame(raw);
+                if (!frame) {
+                    continue;
+                }
+                this._debug('frame', frame);
+                if (frame.command === 'CONNECTED') {
+                    this.connected = true;
+                    this.onConnect && this.onConnect(frame);
+                } else if (frame.command === 'MESSAGE') {
+                    const subId = frame.headers.subscription;
+                    const handler = this.subscriptions.get(subId);
+                    handler && handler(frame);
+                } else if (frame.command === 'ERROR') {
+                    this.onError && this.onError(frame);
+                }
+            }
+        }
+
+        _parseFrame(raw) {
+            const lines = raw.split('\n');
+            const command = (lines.shift() || '').trim();
+            if (!command) {
+                return null;
+            }
+            const headers = {};
+            let bodyLines = [];
+            let isBody = false;
+            for (const line of lines) {
+                if (!isBody) {
+                    if (line === '') {
+                        isBody = true;
+                        continue;
+                    }
+                    const idx = line.indexOf(':');
+                    if (idx > -1) {
+                        const key = line.slice(0, idx).trim();
+                        const value = line.slice(idx + 1).trim();
+                        headers[key] = value;
+                    }
+                } else {
+                    bodyLines.push(line);
+                }
+            }
+            return {command, headers, body: bodyLines.join('\n')};
+        }
+
+        _debug(event, payload) {
+            if (typeof this.debug === 'function') {
+                this.debug(event, payload);
+            }
+        }
+    }
+
+    (function () {
+        const logPanel = document.getElementById('log-panel');
+        const connectBtn = document.getElementById('connect-btn');
+        const disconnectBtn = document.getElementById('disconnect-btn');
+        const triggerBtn = document.getElementById('trigger-btn');
+        const clearBtn = document.getElementById('clear-log-btn');
+        const sessionInput = document.getElementById('session-id');
+        const httpBaseInput = document.getElementById('http-base');
+        const wsUrlInput = document.getElementById('ws-url');
+        const statusChip = document.getElementById('ws-status');
+
+        const state = {
+            client: null,
+            subscription: null,
+            sessionId: '',
+            wsConnected: false,
+            manualDisconnect: false
+        };
+
+        function appendLog(title, data, type = 'info') {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'log-entry';
+            const ts = new Date().toLocaleTimeString();
+            const color = type === 'error' ? '#fca5a5' : '#a5b4fc';
+            wrapper.innerHTML = `<strong style="color:${color}">${ts} - ${title}</strong>
+<pre>${JSON.stringify(data, null, 2)}</pre>`;
+            logPanel.prepend(wrapper);
+        }
+
+        function setWsStatus(label, color) {
+            statusChip.textContent = label;
+            statusChip.style.background = color;
+        }
+
+        function resolveHttpUrl(path) {
+            const base = httpBaseInput.value.trim();
+            if (!base) {
+                return path;
+            }
+            return base.replace(/\/$/, '') + path;
+        }
+
+        function resolveWsUrl(endpoint) {
+            const trimmed = endpoint && endpoint.trim() ? endpoint.trim() : '/ws';
+            if (/^wss?:\/\//i.test(trimmed)) {
+                return trimmed;
+            }
+            const origin = window.location.origin && window.location.origin !== 'null'
+                ? window.location.origin
+                : 'http://localhost:8080';
+            const httpBase = httpBaseInput.value.trim() || origin;
+            const url = new URL(trimmed, httpBase);
+            if (url.protocol === 'http:') {
+                url.protocol = 'ws:';
+            } else if (url.protocol === 'https:') {
+                url.protocol = 'wss:';
+            }
+            return url.toString();
+        }
+
+        function parseJsonSafely(body) {
+            try {
+                return JSON.parse(body);
+            } catch (err) {
+                return {raw: body};
+            }
+        }
+
+        async function triggerGeneration() {
+            if (!state.sessionId) {
+                alert('请先填写 sessionId 并建立 WebSocket 连接');
+                return;
+            }
+
+            triggerBtn.disabled = true;
+            appendLog('HTTP', {status: 'pending', message: '开始请求生成报告'}, 'info');
+            try {
+                const res = await fetch(resolveHttpUrl(`/interview/sessions/${state.sessionId}/report/generate`), {
+                    method: 'POST'
+                });
+                const body = await res.json().catch(() => ({}));
+                appendLog('HTTP 响应', body, res.ok ? 'info' : 'error');
+            } catch (err) {
+                appendLog('HTTP 调用失败', {message: err.message}, 'error');
+            } finally {
+                triggerBtn.disabled = false;
+            }
+        }
+
+        function handleDisconnectUi() {
+            state.wsConnected = false;
+            state.subscription = null;
+            state.client = null;
+            connectBtn.disabled = false;
+            disconnectBtn.disabled = true;
+            triggerBtn.disabled = true;
+            setWsStatus('未连接', '#fee2e2');
+        }
+
+        function connectWs() {
+            const sessionId = sessionInput.value.trim();
+            if (!sessionId) {
+                alert('请先输入 SessionId');
+                return;
+            }
+            if (state.wsConnected) {
+                alert('已连接 WebSocket');
+                return;
+            }
+
+            state.sessionId = sessionId;
+            state.manualDisconnect = false;
+            connectBtn.disabled = true;
+            disconnectBtn.disabled = true;
+            triggerBtn.disabled = true;
+            setWsStatus('连接中', '#fef3c7');
+
+            const endpoint = wsUrlInput.value.trim() || '/ws';
+            const client = new SimpleStompClient({
+                url: resolveWsUrl(endpoint),
+                debug: null,
+                onConnect: () => {
+                    state.wsConnected = true;
+                    connectBtn.disabled = true;
+                    disconnectBtn.disabled = false;
+                    triggerBtn.disabled = false;
+                    setWsStatus('已连接', '#d1fae5');
+                    appendLog('WebSocket', {
+                        status: 'connected',
+                        destination: `/topic/interview/report/${sessionId}`
+                    });
+
+                    state.subscription = client.subscribe(`/topic/interview/report/${sessionId}`, frame => {
+                        const payload = parseJsonSafely(frame.body);
+                        const type = payload.status === 'FAILED' ? 'error' : 'info';
+                        appendLog('收到推送', payload, type);
+                    });
+                },
+                onError: (frame) => {
+                    appendLog('STOMP Error', frame, 'error');
+                },
+                onClose: (event) => {
+                    const type = state.manualDisconnect ? 'info' : 'error';
+                    appendLog('WebSocket 关闭', {
+                        code: event?.code,
+                        reason: event?.reason || '',
+                        byUser: state.manualDisconnect
+                    }, type);
+                    state.manualDisconnect = false;
+                    handleDisconnectUi();
+                }
+            });
+
+            client.activate();
+            state.client = client;
+        }
+
+        function disconnectWs() {
+            if (!state.client) {
+                handleDisconnectUi();
+                return;
+            }
+            state.manualDisconnect = true;
+            if (state.subscription) {
+                try {
+                    state.subscription.unsubscribe();
+                } catch (err) {
+                    appendLog('取消订阅异常', {message: err.message}, 'error');
+                }
+                state.subscription = null;
+            }
+            state.client.deactivate();
+        }
+
+        connectBtn.addEventListener('click', connectWs);
+        disconnectBtn.addEventListener('click', disconnectWs);
+        triggerBtn.addEventListener('click', triggerGeneration);
+        clearBtn.addEventListener('click', () => (logPanel.innerHTML = ''));
+    })();
+</script>
+</body>
+</html>

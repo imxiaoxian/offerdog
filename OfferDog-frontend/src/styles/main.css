@@ -1,0 +1,133 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #fafafa;
+  overflow-x: hidden;
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+#app {
+  width: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* 触控：减少 300ms 延迟、避免误触放大 */
+@media (hover: none) and (pointer: coarse) {
+  a,
+  button,
+  [role='button'] {
+    touch-action: manipulation;
+  }
+}
+
+/* Material Design 3 全局主题色 */
+:root {
+  /* 主色 */
+  --md-primary-color: #1976d2;
+  --md-primary-color-light: #42a5f5;
+  --md-primary-color-dark: #1565c0;
+  
+  /* 辅助色 */
+  --md-secondary-color: #6200ee;
+  --md-secondary-color-light: #9c27b0;
+  --md-secondary-color-dark: #3700b3;
+  
+  /* 背景色 */
+  --md-surface-color: #ffffff;
+  --md-background-color: #fafafa;
+  --md-surface-variant-color: #e8e8e8;
+  
+  /* 中性色 */
+  --md-text-primary-color: rgba(0, 0, 0, 0.87);
+  --md-text-secondary-color: rgba(0, 0, 0, 0.6);
+  --md-text-disabled-color: rgba(0, 0, 0, 0.38);
+  --md-text-icon-color: rgba(0, 0, 0, 0.54);
+  
+  /* 分隔线 */
+  --md-divider-color: rgba(0, 0, 0, 0.12);
+  --md-divider-color-light: rgba(0, 0, 0, 0.08);
+  
+  /* 阴影 */
+  --md-shadow-color: rgba(0, 0, 0, 0.1);
+  --md-shadow-color-light: rgba(0, 0, 0, 0.08);
+  
+  /* 圆角 */
+  --md-border-radius-sm: 4px;
+  --md-border-radius-md: 8px;
+  --md-border-radius-lg: 12px;
+  --md-border-radius-xl: 16px;
+  --md-border-radius-round: 50%;
+  
+  /* 过渡 */
+  --md-transition-fast: 150ms;
+  --md-transition-normal: 250ms;
+  --md-transition-slow: 350ms;
+  
+  /* 阴影层级 */
+  --md-shadow-elevation-1: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --md-shadow-elevation-2: 0 4px 12px rgba(0, 0, 0, 0.12);
+  --md-shadow-elevation-3: 0 8px 16px rgba(0, 0, 0, 0.14);
+  --md-shadow-elevation-4: 0 12px 20px rgba(0, 0, 0, 0.16);
+  --md-shadow-elevation-5: 0 16px 24px rgba(0, 0, 0, 0.18);
+}
+
+/* 自定义滚动条 - Material Design 3 风格 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+  transition: background 0.2s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+::-webkit-scrollbar-thumb:active {
+  background: rgba(0, 0, 0, 0.4);
+}
+
+/* Element Plus 样式覆盖 */
+.el-card {
+  margin-bottom: 20px;
+}
+
+/* 打印样式 */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  body {
+    background: white;
+  }
+
+  .resume-preview {
+    box-shadow: none !important;
+    page-break-after: avoid;
+  }
+}

@@ -1,0 +1,242 @@
+# 通用本地编排：复制 .env.example 为 .env 后按需修改。
+# 仅基础设施：docker compose up -d postgres redis minio whisper
+# 含 Spring 应用镜像：docker compose up -d
+# 可选（Kafka + ES，本仓库 Java 代码未使用）：docker compose --profile extended up -d
+# 可选内网穿透（临时公网 URL）：docker compose --profile tunnel up cloudflared；默认 TUNNEL_TARGET=本机 Vite:5173（整站）
+
+# Compose 项目名仅允许小写/数字/横线；对外产品名 OfferDog 时设 COMPOSE_PROJECT_NAME=offerdog
+name: ${COMPOSE_PROJECT_NAME:-offerdog}
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-pgvector/pgvector:0.8.0-pg16}
+    container_name: ${POSTGRES_CONTAINER_NAME:-OfferDog_postgres}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-interview}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-OfferDog2026}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+      # 供 init 脚本内 \i 引用仓库 sql/（仅新数据卷首次初始化时执行）
+      - ./sql:/schema:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    image: ${REDIS_IMAGE:-redis:7-alpine}
+    container_name: ${REDIS_CONTAINER_NAME:-OfferDog_redis}
+    restart: unless-stopped
+    command: >
+      redis-server
+      --bind 0.0.0.0
+      --port 6379
+      --requirepass ${REDIS_PASSWORD:-OfferDog2026}
+      --appendonly yes
+    ports:
+      # 宿主机端口（勿与 Spring 的 REDIS_PORT 混用；避免被 shell 里误设的 REDIS_PORT 覆盖）
+      - "${REDIS_PUBLISH_PORT:-16378}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-OfferDog2026}", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  minio:
+    image: ${MINIO_IMAGE:-minio/minio:RELEASE.2025-10-15T17-29-55Z}
+    container_name: ${MINIO_CONTAINER_NAME:-OfferDog_minio}
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-PaiSmart2025}
+    command: server /data --console-address ":9001" --address ":9000"
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+      start_period: 10s
+
+  whisper:
+    # 镜像名须小写（Docker 仓库名规范）；容器名仍可用 OfferDog_whisper
+    # 端口：${WHISPER_PORT}:5000（如 5002:5000）；compose 网络内其它服务访问 http://whisper:5000，勿写宿主机 5002
+    build:
+      context: ./whisper-service
+      dockerfile: Dockerfile
+    image: ${WHISPER_IMAGE:-offerdog-whisper:latest}
+    pull_policy: if_not_present
+    container_name: ${WHISPER_CONTAINER_NAME:-OfferDog_whisper}
+    restart: unless-stopped
+    ports:
+      - "${WHISPER_PORT:-5000}:5000"
+    environment:
+      MODEL_SIZE: ${WHISPER_MODEL_SIZE:-tiny}
+      MODEL_PATH: /models
+    volumes:
+      - ./whisper-models:/models
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  app:
+    build: .
+    image: ${APP_IMAGE:-offerdog:latest}
+    container_name: ${APP_CONTAINER_NAME:-OfferDog_app}
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
+      SERVER_PORT: 8080
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      DEEPSEEK_CHAT_MODEL: ${DEEPSEEK_CHAT_MODEL:-deepseek-chat}
+      DEEPSEEK_CONNECT_TIMEOUT_MS: ${DEEPSEEK_CONNECT_TIMEOUT_MS:-30000}
+      DEEPSEEK_READ_TIMEOUT_MS: ${DEEPSEEK_READ_TIMEOUT_MS:-600000}
+      # 嵌入默认硅基流动（OpenAI 兼容 /v1/embeddings）；密钥在项目根 .env 设 SILICONFLOW_API_KEY
+      SILICONFLOW_API_KEY: ${SILICONFLOW_API_KEY:-}
+      SILICONFLOW_BASE_URL: ${SILICONFLOW_BASE_URL:-https://api.siliconflow.cn}
+      SILICONFLOW_EMBEDDING_MODEL: ${SILICONFLOW_EMBEDDING_MODEL:-BAAI/bge-large-zh-v1.5}
+      # 与 spring.ai.openai.api-key 对齐，确保容器内一定注入嵌入用 Key
+      SPRING_AI_OPENAI_API_KEY: ${SILICONFLOW_API_KEY:-}
+      SPRING_AI_OPENAI_BASE_URL: ${SILICONFLOW_BASE_URL:-https://api.siliconflow.cn}
+      SPRING_AI_OPENAI_EMBEDDING_OPTIONS_MODEL: ${SILICONFLOW_EMBEDDING_MODEL:-BAAI/bge-large-zh-v1.5}
+      # 对应 SiliconFlow encoding_format，默认 float；可选 base64
+      SPRING_AI_OPENAI_EMBEDDING_OPTIONS_ENCODING_FORMAT: ${SILICONFLOW_EMBEDDING_ENCODING_FORMAT:-float}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-interview}?serverTimezone=Asia/Shanghai&reWriteBatchedInserts=true
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-postgres}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-OfferDog2026}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-OfferDog2026}
+      SPRING_SESSION_NAMESPACE: ${SPRING_SESSION_NAMESPACE:-inai:session}
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-admin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-PaiSmart2025}
+      MINIO_BUCKET_NAME: ${MINIO_BUCKET_NAME:-interview}
+      MINIO_URL_PREFIX: http://localhost:${MINIO_API_PORT:-9000}
+      ASR_PROVIDER: ${ASR_PROVIDER:-whisper}
+      WHISPER_ENDPOINT: http://whisper:5000
+      ASR_WHISPER_DEFAULT_PCM_SAMPLE_RATE: ${ASR_WHISPER_DEFAULT_PCM_SAMPLE_RATE:-0}
+      ASR_WHISPER_LANGUAGE: ${ASR_WHISPER_LANGUAGE:-auto}
+    ports:
+      # 默认 9081：避开 Windows 常见 Hyper-V 保留段 8004-8103；前端 Vite 代理请同步 VITE_DEV_BACKEND_URL
+      - "${APP_PORT:-9081}:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      whisper:
+        condition: service_healthy
+
+  # Cloudflare Quick Tunnel：把宿主机上的 HTTP 服务暴露为 trycloudflare.com 子域名（重启即变；勿用于生产密钥）
+  cloudflared:
+    image: ${CLOUDFLARED_IMAGE:-cloudflare/cloudflared:latest}
+    container_name: ${CLOUDFLARED_CONTAINER_NAME:-OfferDog_cloudflared}
+    profiles: ["tunnel"]
+    restart: "no"
+    command:
+      - tunnel
+      - --no-autoupdate
+      - --url
+      - ${TUNNEL_TARGET:-http://host.docker.internal:5173}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ---------- 可选：与上一项目对齐的中间件（本 Spring 工程未引用，按需启用） ----------
+  kafka:
+    profiles: ["extended"]
+    image: ${KAFKA_IMAGE:-bitnamilegacy/kafka:latest}
+    container_name: ${KAFKA_CONTAINER_NAME:-OfferDog_kafka}
+    restart: unless-stopped
+    ports:
+      - "${KAFKA_PORT:-9092}:9092"
+      - "${KAFKA_CONTROLLER_PORT:-9093}:9093"
+    environment:
+      KAFKA_CFG_NODE_ID: ${KAFKA_CFG_NODE_ID:-0}
+      KAFKA_CFG_PROCESS_ROLES: controller,broker
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 0@kafka:9093
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://localhost:${KAFKA_PORT:-9092}
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+    volumes:
+      - kafka_data:/bitnami/kafka
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  elasticsearch:
+    profiles: ["extended"]
+    image: ${ES_IMAGE:-elasticsearch:8.10.4}
+    container_name: ${ES_CONTAINER_NAME:-OfferDog_elasticsearch}
+    restart: unless-stopped
+    ports:
+      - "${ELASTICSEARCH_PORT:-19200}:9200"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    environment:
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:-PaiSmart2025}
+      node.name: ${ES_NODE_NAME:-OfferDog-es01}
+      discovery.type: single-node
+      xpack.license.self_generated.type: basic
+      xpack.security.enabled: "true"
+      xpack.security.enrollment.enabled: "false"
+      xpack.security.http.ssl.enabled: "false"
+      cluster.name: ${ES_CLUSTER_NAME:-OfferDog-es-cluster}
+      ES_JAVA_OPTS: ${ES_JAVA_OPTS:--Xms512m -Xmx512m}
+    deploy:
+      resources:
+        limits:
+          memory: ${ES_MEM_LIMIT:-2g}
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -sf -u elastic:$${ELASTIC_PASSWORD} http://localhost:9200/_cluster/health || exit 1",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+  kafka_data:
+  es_data:

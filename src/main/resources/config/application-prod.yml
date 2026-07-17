@@ -1,0 +1,199 @@
+server:
+  port: ${SERVER_PORT:8080}
+  # 局域网/手机访问本机后端时须监听 0.0.0.0；仅本机可设 SERVER_ADDRESS=127.0.0.1
+  address: ${SERVER_ADDRESS:0.0.0.0}
+
+spring:
+  application:
+    name: OfferDog
+  banner:
+    location: classpath:config/banner.txt
+  thymeleaf:
+    prefix: classpath:/templates/
+    suffix: .html
+    cache: false
+    encoding: UTF-8
+    mode: HTML
+  servlet:
+    multipart:
+      max-file-size: ${SPRING_MULTIPART_MAX_FILE_SIZE:30MB}
+      max-request-size: ${SPRING_MULTIPART_MAX_REQUEST_SIZE:100MB}
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://host.docker.internal:5432/interview?serverTimezone=Asia/Shanghai&reWriteBatchedInserts=true}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:your-db-password}
+    hikari:
+      maximum-pool-size: ${SPRING_DATASOURCE_MAX_POOL_SIZE:20}
+      minimum-idle: ${SPRING_DATASOURCE_MIN_IDLE:20}
+      connection-timeout: ${SPRING_DATASOURCE_CONNECTION_TIMEOUT:5000}
+      max-lifetime: ${SPRING_DATASOURCE_MAX_LIFETIME:28800000}
+  data:
+    redis:
+      host: ${REDIS_HOST:host.docker.internal}
+      port: ${REDIS_PORT:6379}
+      database: ${REDIS_DATABASE:0}
+      timeout: ${REDIS_TIMEOUT:3000}
+      password: ${REDIS_PASSWORD:your-redis-password}
+      jedis:
+        pool:
+          max-active: ${REDIS_MAX_ACTIVE:200}
+          max-idle: ${REDIS_MAX_IDLE:10}
+          min-idle: ${REDIS_MIN_IDLE:0}
+  cache:
+    type: caffeine
+    cache-names: interviewReports,interviewLearningPacks
+    caffeine:
+      spec: maximumSize=5000,expireAfterWrite=30m
+  session:
+    store-type: redis
+    redis:
+      namespace: ${SPRING_SESSION_NAMESPACE:inai:session}
+      flush-mode: on_save
+  mail:
+    host: ${MAIL_HOST:smtp.qq.com}
+    username: ${MAIL_USERNAME:your-email@qq.com}
+    password: ${MAIL_PASSWORD:your-mail-password}
+    default-encoding: UTF-8
+    port: ${MAIL_PORT:465}
+    protocol: smtp
+    properties:
+      mail:
+        smtp:
+          auth: true
+          ssl:
+            enable: true
+          socketFactory:
+            port: ${MAIL_PORT:465}
+            class: javax.net.ssl.SSLSocketFactory
+  ai:
+    vectorstore:
+      pgvector:
+        initialize-schema: ${PGVECTOR_INIT_SCHEMA:true}
+        schema-name: ${PGVECTOR_SCHEMA:public}
+        table-name: ${PGVECTOR_TABLE:interview_vectorstore}
+        index-type: ${PGVECTOR_INDEX_TYPE:hnsw}
+        dimensions: ${PGVECTOR_DIMENSIONS:1024}
+    # 嵌入：硅基流动 OpenAI 兼容 POST /v1/embeddings（Authorization: Bearer <api-key>，Content-Type: application/json）
+    # 文档：https://docs.siliconflow.cn/cn/api-reference/embeddings/create-embeddings
+    openai:
+      # Docker 中由 SPRING_AI_OPENAI_* 注入；本地可仅用 SILICONFLOW_* 或 Spring 标准变量
+      api-key: ${SILICONFLOW_API_KEY:${SPRING_AI_OPENAI_API_KEY:}}
+      base-url: ${SILICONFLOW_BASE_URL:${SPRING_AI_OPENAI_BASE_URL:https://api.siliconflow.cn}}
+      embedding:
+        options:
+          model: ${SILICONFLOW_EMBEDDING_MODEL:${SPRING_AI_OPENAI_EMBEDDING_OPTIONS_MODEL:BAAI/bge-large-zh-v1.5}}
+          # 与 SiliconFlow encoding_format 一致：float | base64
+          encoding-format: ${SILICONFLOW_EMBEDDING_ENCODING_FORMAT:${SPRING_AI_OPENAI_EMBEDDING_OPTIONS_ENCODING_FORMAT:float}}
+
+mybatis-plus:
+  type-enums-package: com.hanserdev.interview.enums
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+    default-enum-type-handler: com.baomidou.mybatisplus.core.handlers.MybatisEnumTypeHandler
+  global-config:
+    banner: false
+  mapper-locations: classpath*:/mapperxml/*.xml
+
+cos:
+  endpoint: ${COS_ENDPOINT:}
+  bucketName: ${COS_BUCKET:}
+  appId: ${COS_APP_ID:}
+  region: ${COS_REGION:}
+  secretId: ${COS_SECRET_ID:}
+  secretKey: ${COS_SECRET_KEY:}
+
+minio:
+  endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+  access-key: ${MINIO_ACCESS_KEY:admin}
+  secret-key: ${MINIO_SECRET_KEY:your-minio-secret-key}
+  bucket-name: ${MINIO_BUCKET_NAME:interview}
+  url-prefix: ${MINIO_URL_PREFIX:http://localhost:9000}
+
+logging:
+  level:
+    org.springframework.ai: ${LOG_LEVEL_SPRING_AI:INFO}
+    com.hanserdev.interview.domain.mapper: ${LOG_LEVEL_MAPPER:INFO}
+
+aliyun:
+  aliyun_ak_id: ${ALIYUN_AK_ID:your-aliyun-ak-id}
+  aliyun_ak_secret: ${ALIYUN_AK_SECRET:your-aliyun-ak-secret}
+
+interview:
+  llm:
+    deepseek:
+      api-key: ${DEEPSEEK_API_KEY:}
+      base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+      chat-model: ${DEEPSEEK_CHAT_MODEL:deepseek-chat}
+      # 长文本简历解析等场景易触发 ReadTimeoutException，默认 10 分钟读超时
+      connect-timeout-ms: ${DEEPSEEK_CONNECT_TIMEOUT_MS:30000}
+      read-timeout-ms: ${DEEPSEEK_READ_TIMEOUT_MS:600000}
+  # 面试对话 RAG：从向量库 knowledge（doc_type=kb）检索
+  rag:
+    enabled: ${INTERVIEW_RAG_ENABLED:true}
+    top-k: ${INTERVIEW_RAG_TOP_K:5}
+    similarity-threshold: ${INTERVIEW_RAG_SIM_THRESHOLD:0.35}
+  # 知识库 Markdown 位于 classpath:knowledge-base/{frontend,backend,devops,qa}/
+  knowledge-base:
+    import-on-startup: ${KB_IMPORT_ON_STARTUP:false}
+    # 本地 RAG 资料目录（相对进程工作目录，如项目根下 RAG/）；POST /admin/knowledge-base/import-rag 会扫描此目录
+    rag-directory: ${INTERVIEW_KB_RAG_DIRECTORY:RAG}
+    # 分块：legacy=原固定窗口；recursive-semantic=Markdown 节 + 递归分隔符 + 相邻块嵌入相似度合并 + 重叠
+    chunk-strategy: ${INTERVIEW_KB_CHUNK_STRATEGY:recursive-semantic}
+    # 分块字符上限（须小于嵌入模型单条 token 限制；硅基 BAAI/bge-large-zh-v1.5 为 512 tokens，中文宜偏小）
+    # BGE 等 512-token 上限：中文宜 300～380 字量级；过大易触发嵌入 413
+    chunk-max-chars: ${INTERVIEW_KB_CHUNK_MAX_CHARS:340}
+    chunk-min-chars: ${INTERVIEW_KB_CHUNK_MIN_CHARS:100}
+    chunk-overlap-chars: ${INTERVIEW_KB_CHUNK_OVERLAP:48}
+    # 相邻分块余弦相似度 ≥ 该值且总长未超限时合并（仅 recursive-semantic）
+    semantic-merge-threshold: ${INTERVIEW_KB_SEMANTIC_MERGE_THRESHOLD:0.78}
+    semantic-embed-batch-size: ${INTERVIEW_KB_SEMANTIC_EMBED_BATCH:16}
+  # 启动时写入「OfferDog 示例题库」与示例题（官方题 created_by 为空；需嵌入可用才能完成向量化）
+  seed-sample-questions: ${INTERVIEW_SEED_SAMPLE_QUESTIONS:true}
+  # 启动时将未向量化的题目补齐到向量库（默认开启；可设 INTERVIEW_BOOTSTRAP_QUESTION_VECTORS=false 关闭）
+  bootstrap:
+    question-vectors: ${INTERVIEW_BOOTSTRAP_QUESTION_VECTORS:true}
+  audio:
+    # 语音播报：需同时 TTS_ENABLED=true 且 DOUBAO_ENABLED=true 并配置豆包；默认关闭（DeepSeek 对话不依赖阿里云）
+    tts:
+      enabled: ${TTS_ENABLED:false}
+    asr:
+      enabled: ${ASR_ENABLED:true}
+      # 无豆包/无火山密钥时用本地 Whisper（whisper-service）；需火山大模型 ASR 时设 ASR_PROVIDER=volcengine 并配 ASR_APP_ID/ASR_TOKEN
+      provider: ${ASR_PROVIDER:whisper}
+      api-url: ${ASR_API_URL:wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async}
+      app-id: ${ASR_APP_ID:}
+      token: ${ASR_TOKEN:}
+      resource-id: ${ASR_RESOURCE_ID:volc.bigasr.sauc.duration}
+      model-name: ${ASR_MODEL_NAME:bigmodel}
+      sample-rate: ${ASR_SAMPLE_RATE:16000}
+      bits: ${ASR_BITS:16}
+      channel: ${ASR_CHANNEL:1}
+      enable-itn: ${ASR_ENABLE_ITN:true}
+      enable-punc: ${ASR_ENABLE_PUNC:true}
+      enable-ddc: ${ASR_ENABLE_DDC:true}
+      show-utterances: ${ASR_SHOW_UTTERANCES:true}
+      enable-nonstream: ${ASR_ENABLE_NONSTREAM:true}
+      segment-duration-ms: ${ASR_SEGMENT_DURATION_MS:200}
+      request-timeout-ms: ${ASR_REQUEST_TIMEOUT_MS:60000}
+      ping-interval-seconds: ${ASR_PING_INTERVAL_SECONDS:60}
+      funasr-url: ${FUNASR_ENDPOINT:ws://localhost:10095}
+      whisper-url: ${WHISPER_ENDPOINT:http://localhost:5000}
+      # 浏览器 ScriptProcessor 多为 48kHz；未在 WS init 传 sampleRate 时，Whisper 写 WAV 用此值（0=沿用 sample-rate）
+      whisper-default-pcm-sample-rate: ${ASR_WHISPER_DEFAULT_PCM_SAMPLE_RATE:0}
+      whisper-language: ${ASR_WHISPER_LANGUAGE:auto}
+
+google:
+  api-key: ${GOOGLE_API_KEY:123456}
+
+doubao:
+  enabled: ${DOUBAO_ENABLED:false}
+  appId: ${DOUBAO_APP_ID:}
+  accessToken: ${DOUBAO_ACCESS_TOKEN:your-doubao-access-token}
+  resourceId: ${DOUBAO_RESOURCE_ID:}
+  voice: ${DOUBAO_VOICE:ICL_zh_female_zhixingwenwan_tob}
+  encoding: ${DOUBAO_ENCODING:pcm}
+  wsEndpoint: ${DOUBAO_WS_ENDPOINT:wss://openspeech.bytedance.com/api/v3/tts/bidirection}
+  awaitTimeoutMs: ${DOUBAO_AWAIT_TIMEOUT_MS:45000}
+  speechRate: ${DOUBAO_SPEECH_RATE:10}
